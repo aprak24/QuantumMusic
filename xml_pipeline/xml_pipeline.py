@@ -382,40 +382,32 @@ def build_wave_functions(frames, dim=128):
             wave_functions[idx] /= np.linalg.norm(wave_functions[idx])
     return wave_functions
 
-def build_circuit(wave_functions):
-    n_qubits = int(np.log2(len(wave_functions[0])))
-    qc = QuantumCircuit(n_qubits)
-    for psi in wave_functions:
-        qc.initialize(psi, range(n_qubits))
-        qc.barrier()
-    return qc
-
-# My idea for first quantum phenomena: Quantum Entanglement
-
-    # Let's entangle pitches and instruments
+def build_harmonic_circuit(wave_functions):
+    n_music_qubits = int(np.log2(len(wave_functions[0])))
+    n_total_qubits = n_music_qubits + 1
+    qc = QuantumCircuit(n_total_qubits)
     
-        # Classically: Introduce a deterministic rule that assigns an instrument to a known pitch
-            # If pitch is low -> violin
-            # If pitch is high -> piano
-            # pitch = f(instrument)
-            
-            # Test:
-                # Run the code and check pitch mappings. 
-                # Change instrument mapping
-                # Pitch should remain unchanged
-                # So changes to instrument should not affect pitch behavior
-            
-        # Quantum:
-            # pitch = lower 6 bits of quantum circuit. i & 0b00111111
-            # instrument = top bit (i>>6) & 0b1
-            # map pitch  value to instrument (piano or voilin)
-            
-            # Test:
-                # Entangle (H + cx gate) pitch and instrument. This means the two only exist in their joint quantum state. Always correlated
-                # Rotate instrument qubits, notice that instrument also changes.
-                
-                
-# QMuVi sonifies pure states, not qubits; instruments are chosen by phase, not by index bits—so timbre must be expressed through phase–amplitude correlations, not through bit routing.
+    # Maps shadow qubit index to the most significant qubit
+    # See harmonic note map to understand why this is important
+    shadow_idx = n_total_qubits - 1 
+    total_frames = len(wave_functions)
+
+    for i, psi in enumerate(wave_functions):
+        # 1. Initialize the Melody (Music Register)
+        qc.initialize(psi, range(n_music_qubits))
+        qc.reset(shadow_idx)
+        
+        # 0% at start -> 100% at end
+        # This controls "How likely is the Octave to appear?"
+        intensity = (i / total_frames) * (np.pi)
+
+        # RX Gate (rotates theta about the x axis)
+        #  following code rotate the shadow qubit (most sig qubit) by 'intensity' amount."
+        qc.rx(intensity, shadow_idx)
+    
+        qc.barrier()
+        
+    return qc
 
 tree = ET.parse("xml_files/chariotsoffire.musicxml")
 root = tree.getroot()
@@ -430,46 +422,34 @@ events = create_events(score, global_features)
 frames = build_frames(events)
 frames = apply_musical_elements(frames)
 wave_functions = build_wave_functions(frames)
-qc = build_circuit(wave_functions)
-
-# Toying around with mixed states
-
-# >>>>>>>
-# psi1 = wave_functions[0]
-# psi2 = wave_functions[30]
-
-# rho1 = DensityMatrix(Statevector(psi1))
-# rho2 = DensityMatrix(Statevector(psi2))
-
-# p = 0.6
-# rho = p * rho1 + (1-p) * rho2
-
-# purity = np.trace(rho.data @ rho.data).real
-# print(f"Purity: {purity}")
-# >>>>>>>>>
+qc = build_harmonic_circuit(wave_functions)
 
 QMUV_TPQ = 480  # QMuVi ticks per quarter note
 
-
-def note_map(i: int) -> int:
-    return int(i)
-
+def harmonic_note_map(i: int) -> int:
+    # 1. Base Pitch (From Music Qubit)
+    # The modulo operator (%) ensures we get the original pitch 
+    # regardless of whether the shadow bit (128) is set or not.
+    base_pitch = i % 128
+    
+    # If the index is >= 128, it means the Shadow Qubit was measured as |1>
+    # This is because a 1 in the most significant bit equals 256
+    if i >= 128:
+        # We play the note 1 octave higher.
+        return base_pitch + 12 
+    else:
+        return base_pitch
+    
 rhythm = []
 for frame in frames:
     duration_beats = frame["duration"]
     ticks = max(60, int(duration_beats * QMUV_TPQ))
     rhythm.append([ticks, 0, 10])
 
-
-# All qmuvi is doing is taking the indices of the wavefunction with non-zero probability values
-#   (each index corresponds to a midi note) and measuring them when 
-#   we reach a barrier in the quantum circuit. So as long as we introduce our
-#   quantum gates prior to feeding it into qmuvi, we are not limited in our ability to
-#   experiment with different quantum behavior.
 qmuvi.generate_qmuvi(
     qc,
-    "chariots_of_fire",
-    note_map = note_map,
+    "chariots_of_fire_entangled",
+    note_map = harmonic_note_map,
     instruments=instrument_arr,
     rhythm = rhythm,
     fps = 24,
