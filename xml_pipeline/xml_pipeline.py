@@ -387,23 +387,23 @@ def build_harmonic_circuit(wave_functions):
     n_total_qubits = n_music_qubits + 1
     qc = QuantumCircuit(n_total_qubits)
     
-    # Maps shadow qubit index to the most significant qubit
+    # Maps control qubit index to the most significant qubit
     # See harmonic note map to understand why this is important
-    shadow_idx = n_total_qubits - 1 
+    control_idx = n_total_qubits - 1 
     total_frames = len(wave_functions)
 
     for i, psi in enumerate(wave_functions):
-        # 1. Initialize the Melody (Music Register)
+        # 1. Initialize the music qubits
         qc.initialize(psi, range(n_music_qubits))
-        qc.reset(shadow_idx)
+        qc.reset(control_idx)
         
         # 0% at start -> 100% at end
         # This controls "How likely is the Octave to appear?"
         intensity = (i / total_frames) * (np.pi)
 
         # RX Gate (rotates theta about the x axis)
-        #  following code rotate the shadow qubit (most sig qubit) by 'intensity' amount."
-        qc.rx(intensity, shadow_idx)
+        # The following code rotates the control qubit (most sig qubit) by 'intensity' amount."
+        qc.rx(intensity, control_idx)
     
         qc.barrier()
         
@@ -425,17 +425,15 @@ wave_functions = build_wave_functions(frames)
 qc = build_harmonic_circuit(wave_functions)
 
 QMUV_TPQ = 480  # QMuVi ticks per quarter note
-
+# Functions to determine particular frequencies
+# Database of scales and frequencies, create any given harmony 
 def harmonic_note_map(i: int) -> int:
-    # 1. Base Pitch (From Music Qubit)
-    # The modulo operator (%) ensures we get the original pitch 
-    # regardless of whether the shadow bit (128) is set or not.
+    # Ensure we get regular pitch regardless of whether the control qubit has been activated
     base_pitch = i % 128
     
-    # If the index is >= 128, it means the Shadow Qubit was measured as |1>
-    # This is because a 1 in the most significant bit equals 256
+    # If the index is >= 128, it means the Control Qubit was measured as |1>
     if i >= 128:
-        # We play the note 1 octave higher.
+        # We play the note 1 octave higher by adding 12 semitones
         return base_pitch + 12 
     else:
         return base_pitch
